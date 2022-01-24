@@ -4,7 +4,7 @@
 from typing import Any, Callable
 
 import numpy as np
-from pyknos import nflows
+from pyknos.nflows.transforms import Transform
 import torch
 from torch import Tensor
 
@@ -34,7 +34,7 @@ def proposal_init(proposal: Any, transform: nflows.transforms, **kwargs: Any) ->
 def sir(
     proposal: Any,
     potential_fn: Callable,
-    transform: nflows.transforms,
+    transform: Transform,
     sir_num_batches: int = 10,
     sir_batch_size: int = 1000,
     **kwargs: Any,
