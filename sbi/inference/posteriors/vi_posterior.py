@@ -1,32 +1,21 @@
 # This file is part of sbi, a toolkit for simulation-based inference. sbi is licensed
 # under the Affero General Public License v3, see <https://www.gnu.org/licenses/>.
-from ast import Assert
-from functools import partial
-from math import ceil
-from random import sample
-from typing import Any, Callable, Dict, List, Optional, Union
-from warnings import warn
+
+from typing import Callable, List, Optional, Union
 
 import numpy as np
 import torch
 from torch.distributions import Distribution
-import torch.distributions.transforms as torch_tf
-from pyro.infer.mcmc import HMC, NUTS
-from pyro.infer.mcmc.api import MCMC
-from torch import Tensor, nn
 
 from tqdm import tqdm
 
-from sbi import utils as utils
+
 from sbi.inference.posteriors.base_posterior import NeuralPosterior
-from sbi.samplers.rejection.rejection import rejection_sample
 from sbi.types import Shape, TorchTransform
-from sbi.utils import del_entries
 from sbi.utils.torchutils import (
     atleast_2d_float32_tensor,
     Array,
     Tensor,
-    ensure_x_batched,
     ensure_theta_batched,
 )
 
@@ -312,7 +301,8 @@ class VIPosterior(NeuralPosterior):
                 print(f"Quality Score: {metric} \n" + quality_control_msg)
             except Exception as e:
                 print(
-                    f"Quality controll did not work, we reset the variational posterior, please check your setting! \n Following error occured: {e}"
+                    f"Quality controll did not work, we reset the variational \
+                         posterior,please check your setting! \n Following error occured {e}"
                 )
                 self.set_q(
                     get_flow_builder(
@@ -386,5 +376,6 @@ class VIPosterior(NeuralPosterior):
         )
 
     def __deepcopy__(self, *args, **kwargs):
-        # Removes tensor with 'required_grad' from any cache as these do not support deepcopy!
+        # Removes tensor with 'required_grad' from any cache as these
+        # do not support deepcopy!
         make_sure_nothing_in_cache(self.q)
