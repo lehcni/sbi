@@ -1,5 +1,5 @@
-from .vi_pyro_flows import get_flow_builder
-from .vi_divergence_optimizers import get_VI_method
+from .vi_pyro_flows import get_flow_builder, get_default_flows
+from .vi_divergence_optimizers import get_VI_method, get_default_VI_method
 from .vi_sampling import get_sampling_method
 from .vi_quality_controll import get_quality_metric
 from .vi_utils import (

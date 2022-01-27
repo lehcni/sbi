@@ -4,7 +4,7 @@ from torch import nn
 from torch.optim import Adam, Optimizer
 from torch.optim.lr_scheduler import ExponentialLR
 
-from typing import Optional
+from typing import Optional, List
 
 
 import numpy as np
@@ -314,6 +314,10 @@ def get_VI_method(name: str) -> DivergenceOptimizer:
 
     """
     return _VI_method[name]
+
+
+def get_default_VI_method() -> List[str]:
+    return list(_VI_method.keys())
 
 
 @register_VI_method(name="rKL")

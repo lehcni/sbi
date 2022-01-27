@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-from typing import Optional
+from typing import Optional, List
 
 import warnings
 
@@ -33,6 +33,10 @@ def register_sampling_method(
 
 def get_sampling_method(name: str):
     return _SAMPLING_METHOD[name]
+
+
+def get_default_sampling_methods() -> List[str]:
+    return list(_SAMPLING_METHOD.keys())
 
 
 def paretto_smoothed_weights(weights):

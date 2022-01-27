@@ -170,13 +170,14 @@ def make_sure_nothing_in_cache(q):
     q.clear_cache()
     # The original methods can miss some parts..
     for t in q.transforms:
-        t._cached_x_y = None, None
         # Compose transforms are not cleared correctly using q.clear_cache...
         if isinstance(t, torch.distributions.transforms.IndependentTransform):
             t = t.base_transform
         if isinstance(t, torch.distributions.transforms.ComposeTransform):
             for t_i in t.parts:
                 t_i._cached_x_y = None, None
+                
+        t._cached_x_y = None, None
 
         t_dict = t.__dict__
         for key in t_dict:

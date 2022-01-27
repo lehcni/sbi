@@ -29,36 +29,60 @@ from sbi.samplers.vi import (
     get_VI_method,
     get_sampling_method,
     get_quality_metric,
+    get_default_flows,
+    get_default_VI_method,
 )
 
 
 class VIPosterior(NeuralPosterior):
-    r"""Posterior $p(\theta|x)$ with `log_prob()` and `sample()` methods, obtained with
-    SNLE.<br/><br/>
-    SNLE trains a neural network to approximate the likelihood $p(x|\theta)$. The
-    `SNLE_Posterior` class wraps the trained network such that one can directly evaluate
-    the unnormalized posterior log probability $p(\theta|x) \propto p(x|\theta) \cdot
-    p(\theta)$ and draw samples from the posterior with MCMC.<br/><br/>
-    The neural network itself can be accessed via the `.net` attribute.
+    r"""Provides VI (Variational Inference) to sample from the posterior.<br/><br/>
+
+    SNLE or SNRE train neural networks to approximate the likelihood(-ratios).
+    `VIPosterior` allows to train a tractable variational posterior q(theta) which
+    approximates the true posterior p(theta|x_o). After this second training stage, we
+    can produce approximate posterior samples, by just sampling from q with no
+    additional cost.
     """
 
     def __init__(
         self,
         potential_fn: Callable,
-        theta_transform: Optional[TorchTransform] = None,
-        q: Union[str, Distribution] = "maf",
+        q: Union[str, Distribution, NeuralPosterior] = "maf",
         q_kwargs: Dict = dict(),
+        theta_transform: Optional[TorchTransform] = None,
         vi_method: str = "rKL",
         device: str = "cpu",
     ):
-        """
+        f"""
         Args:
-            potential_fn: Potential function to fit.
-            theta_transform: Maps form prior support to unconstrained space
-            q: Variational family, either string or distribution object.
-            q_kwargs: Arguments for construction q.
-            theta_transform: Transform to different parameter space. This is not as
-            important as for MCMC methods.
+            potential_fn: The potential function from which to draw samples.
+            q: Variational family, either string, distribution or an VIPosterior
+                object. This specifies a parameteric class of distribution over which
+                the best possible posterior approximation is searched. For string input
+                we currently support {get_default_flows()}. Of course you can also
+                specify your own variational family by passing a 'parameterized'
+                distribution object i.e. a torch.distributions.Distribution with methods
+                'parameters' returning an iterable of all parameters (you can also
+                handle this using q_kwargs see below).
+            q_kwargs: Arguments for construction q. If q is a string, then this will be
+                passed to the 'flow_builder' and thus can be used to specify
+                hyperparameters. Examples of arguments are e.g. 'num_flows:int' which
+                specify the number of layers but also hyperparameters for pyro
+                transforms as e.g. 'hidden_dims:list[int]' to specify number of hidden
+                neurons and layers of an neural net used within the flow. If q is a
+                distribution, then you can also specify the 'parameters' and 'modules'
+                within this dictionary i.e. as a list of tensors or modules. If q is
+                already a 'VIPosterior', then most arguments will be copied from it
+                (relevant for multi round training).
+            theta_transform: Maps form prior support to unconstrained space. In fact the
+                inverse is used here to ensure that the posterior support is equal to
+                that of the prior!
+            vi_method: This specifies the variational methods which is used to fit q to
+                the posterior. We currently support {get_default_VI_method()}. Note that
+                some of the divergences are 'mode seeking' i.e. they underestimate
+                variance and collapse on multimodal targets ('rKL', 'alpha' for alpha >
+                1) and some are 'mass covering' i.e. they overestimate variance but
+                typically cover all modes ('fKL', 'IW', 'alpha' for alpha < 1).
             device: Training device, e.g., "cpu", "cuda" or "cuda:{0, 1, ...}".
         """
         super().__init__(potential_fn, theta_transform, device)
@@ -68,7 +92,7 @@ class VIPosterior(NeuralPosterior):
         self._optimizer = None
 
         # In contrast to MCMC we want to project into constrained space!
-        self.theta_transform = theta_transform.inv
+        self.link_transform = theta_transform.inv
         self.set_q(q, q_kwargs)
         self.set_vi_method(vi_method)
 
@@ -80,20 +104,18 @@ class VIPosterior(NeuralPosterior):
         )
 
     @property
-    def q(self):
-        """Variational posterior distribution object, can be directly accessed and e.g.
-        can also be used as proposal for rejection sampling/MCMC based posteriors!
-        """
+    def q(self) -> Distribution:
+        """Returns the variational posterior."""
         return self._q
 
     @q.setter
     def q(
         self,
         q: Union[str, Distribution, NeuralPosterior],
-    ):
+    ) -> None:
         """Sets the variational distribution. If the distribution does not admit access
-        through "parameters" and "modules" function, please use set_q if you want to
-        explicitly specify the parameters and modules
+        through "parameters" and "modules" function, please use 'set_q' if you want to
+        explicitly specify the parameters and modules.
 
 
         Args:
@@ -107,7 +129,7 @@ class VIPosterior(NeuralPosterior):
         self,
         q: Union[str, Distribution, NeuralPosterior],
         q_kwargs: Dict = {},
-    ):
+    ) -> None:
         """Defines the variational family. You can specify over which
         parameters/modules we optimize. This is required for custom distributions which
         e.g. do not inherit nn.Modules or has the function "parameters" or "modules" to
@@ -126,11 +148,11 @@ class VIPosterior(NeuralPosterior):
         self._q_kwargs = q_kwargs
         if isinstance(q, Distribution):
             q = adapt_and_check_variational_distributions(
-                q, q_kwargs, self._prior, self.theta_transform
+                q, q_kwargs, self._prior, self.link_transform
             )
         elif isinstance(q, str):
             q = get_flow_builder(
-                q, self._prior.event_shape, self.theta_transform, **q_kwargs
+                q, self._prior.event_shape, self.link_transform, **q_kwargs
             )
             check_variational_distribution(q, self._prior)
         elif isinstance(q, VIPosterior):
@@ -143,7 +165,7 @@ class VIPosterior(NeuralPosterior):
 
     @property
     def vi_method(self):
-        """Variational inference method e.g. you can choose different divergence"""
+        f"""Variational inference method e.g. one of {get_default_VI_method()}"""
         return self._vi_method
 
     @vi_method.setter
@@ -152,7 +174,7 @@ class VIPosterior(NeuralPosterior):
         self.set_vi_method(method)
 
     def set_vi_method(self, method: str) -> "NeuralPosterior":
-        """Sets variational inference method especially which divergence measure to minimize.
+        f"""Sets variational inference method e.g. one of {get_default_VI_method()}.
 
         Args:
             method: Method to use.
@@ -170,10 +192,8 @@ class VIPosterior(NeuralPosterior):
         x: Optional[Tensor] = None,
         method: str = "naive",
         **kwargs,
-    ):
+    ) -> Tensor:
         """Samples from the variational posterior distribution.
-
-
 
         Args:
             sample_shape: Shape of samples
@@ -194,10 +214,7 @@ class VIPosterior(NeuralPosterior):
 
         self.potential_fn.set_x(x)
         sampling_function = get_sampling_method(method)
-        if len(sample_shape) == 0:
-            num_samples = 1
-        else:
-            num_samples = torch.prod(torch.tensor(sample_shape))
+        num_samples = torch.Size(sample_shape).numel()
         samples = sampling_function(num_samples, self.potential_fn, self.q, **kwargs)
         return samples.reshape((*sample_shape, samples.shape[-1]))
 
@@ -401,7 +418,15 @@ class VIPosterior(NeuralPosterior):
             show_progress_bars=show_progress_bars,
         )
 
-    def __deepcopy__(self, *args, **kwargs):
+    def __deepcopy__(self, memo):
         # Removes tensor with 'required_grad' from any cache as these
         # do not support deepcopy!
         make_sure_nothing_in_cache(self.q)
+        if self._optimizer:
+            make_sure_nothing_in_cache(self._optimizer.q)
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, deepcopy(v, memo))
+        return result

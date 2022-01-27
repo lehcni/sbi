@@ -71,6 +71,10 @@ def get_flow_builder(name, event_shape, link_flow, **kwargs):
     return builder(event_shape, link_flow, **kwargs)
 
 
+def get_default_flows():
+    return list(_FLOW_BUILDERS.keys())
+
+
 # Autoregressive transforms
 
 
