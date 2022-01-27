@@ -7,21 +7,21 @@ from torch import Tensor, eye, ones, zeros
 from torch.distributions import MultivariateNormal
 from torch.distributions.transforms import IndependentTransform, identity_transform
 
-from sbi.inference import SNPE, SNPE_A
-from sbi.inference.snpe.snpe_a import SNPE_A_MDN
-from sbi.utils import (
-    BoxUniform,
-    get_kde,
-    mcmc_transform,
-    posterior_nn,
-    likelihood_nn,
-    classifier_nn,
-)
 from sbi.analysis import (
     conditional_corrcoeff,
     conditional_pairplot,
     eval_conditional_density,
     sensitivity_analysis,
+)
+from sbi.inference import SNPE, SNPE_A
+from sbi.inference.snpe.snpe_a import SNPE_A_MDN
+from sbi.utils import (
+    BoxUniform,
+    classifier_nn,
+    get_kde,
+    likelihood_nn,
+    mcmc_transform,
+    posterior_nn,
 )
 from sbi.utils.user_input_checks import process_prior
 
@@ -411,8 +411,8 @@ def test_z_scoring_structured():
     Test that z-scoring string args don't break API.
     """
     # Generate some signals for test.
-    import torch
     import numpy as np
+    import torch
 
     t = np.arange(0, 1, 0.001)
     x_sin = np.sin(t * 2 * torch.pi * 5)

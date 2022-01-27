@@ -32,7 +32,6 @@ from sbi.utils.sbiutils import (
     warn_on_invalid_x_for_snpec_leakage,
     within_support,
     x_shape_from_simulation,
-    match_theta_and_x_batch_shapes,
     z_score_parser,
 )
 from sbi.utils.torchutils import (
@@ -70,4 +69,3 @@ from sbi.utils.user_input_checks import (
     validate_theta_and_x,
 )
 from sbi.utils.user_input_checks_utils import MultipleIndependent
-from sbi.utils.potentialutils import transformed_potential, pyro_potential_wrapper

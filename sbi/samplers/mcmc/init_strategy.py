@@ -4,8 +4,8 @@
 from typing import Any, Callable
 
 import numpy as np
-from pyknos.nflows.transforms import Transform
 import torch
+from pyknos.nflows.transforms import Transform
 from torch import Tensor
 
 
@@ -24,7 +24,7 @@ class IterateParameters:
         return next(self.iter)
 
 
-def proposal_init(proposal: Any, transform: nflows.transforms, **kwargs: Any) -> Tensor:
+def proposal_init(proposal: Any, transform: Transform, **kwargs: Any) -> Tensor:
     """Return a sample from the proposal."""
     prior_samples = proposal.sample((1,)).detach()
     transformed_prior_samples = transform(prior_samples)

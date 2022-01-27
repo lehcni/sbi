@@ -3,19 +3,12 @@
 
 import pytest
 import torch
-
-from matplotlib.figure import Figure
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from torch.utils.tensorboard import SummaryWriter
 
 from sbi.analysis import plot_summary
-from sbi.inference import (
-    SNLE,
-    SNPE,
-    SNRE,
-    prepare_for_sbi,
-    simulate_for_sbi,
-)
+from sbi.inference import SNLE, SNPE, SNRE, prepare_for_sbi, simulate_for_sbi
 from sbi.utils import BoxUniform
 
 

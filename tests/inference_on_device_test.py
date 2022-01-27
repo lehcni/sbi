@@ -15,13 +15,13 @@ from sbi.inference import (
     SNPE_C,
     SNRE_A,
     SNRE_B,
-    simulate_for_sbi,
+    DirectPosterior,
     MCMCPosterior,
     RejectionPosterior,
-    DirectPosterior,
-    ratio_estimator_based_potential,
     likelihood_estimator_based_potential,
     posterior_estimator_based_potential,
+    ratio_estimator_based_potential,
+    simulate_for_sbi,
 )
 from sbi.simulators import linear_gaussian
 from sbi.utils.torchutils import BoxUniform, process_device

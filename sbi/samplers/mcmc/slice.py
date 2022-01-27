@@ -5,9 +5,9 @@ from copy import deepcopy
 from typing import Callable, Dict, Optional
 
 import torch
-from torch import Tensor
 from pyro.infer.mcmc.mcmc_kernel import MCMCKernel
 from pyro.infer.mcmc.util import initialize_model
+from torch import Tensor
 
 
 class Slice(MCMCKernel):

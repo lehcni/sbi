@@ -23,7 +23,7 @@ from sbi.utils.user_input_checks import validate_theta_and_x
 
 def build_input_layer(
     batch_theta: Tensor,
-    z_score_theta: bool = True,
+    z_score_theta: Optional[str] = "independent",
     embedding_net_theta: nn.Module = nn.Identity(),
 ) -> nn.Module:
     r"""Builds input layer for the `RestrictionEstimator` with option to z-score.
@@ -33,7 +33,8 @@ def build_input_layer(
     Args:
         batch_theta: Batch of $\theta$s, used to infer dimensionality and (optional)
             z-scoring.
-        z_score_theta: Whether to z-score $\theta$s passing into the network, can take one of the following:
+        z_score_theta: Whether to z-score $\theta$s passing into the network, can take
+            one of the following:
             - `none`, None: do not z-score
             - `independent`: z-score each dimension independently
             - `structured`: treat dimensions as related, therefore compute mean and std
@@ -43,8 +44,8 @@ def build_input_layer(
     Returns:
         Input layer with optional embedding net and z-scoring.
     """
-    z_score_theta, structured_theta = z_score_parser(z_score_theta)
-    if z_score_theta:
+    z_score_theta_bool, structured_theta = z_score_parser(z_score_theta)
+    if z_score_theta_bool:
         input_layer = nn.Sequential(
             standardizing_net(batch_theta, structured_theta), embedding_net_theta
         )
@@ -59,7 +60,7 @@ def build_classifier(
     hidden_features: int = 100,
     num_blocks: int = 2,
     dropout_probability: float = 0.5,
-    z_score_theta: bool = True,
+    z_score_theta: Optional[str] = "independent",
     embedding_net_theta: nn.Module = nn.Identity(),
 ) -> Callable:
     """
@@ -140,7 +141,7 @@ class RestrictionEstimator:
         hidden_features: int = 100,
         num_blocks: int = 2,
         dropout_probability: float = 0.5,
-        z_score: bool = True,
+        z_score: Optional[str] = "independent",
         embedding_net: nn.Module = nn.Identity(),
     ) -> None:
         r"""
