@@ -13,6 +13,7 @@ from copy import deepcopy
 
 from sbi.inference.potentials.base_potential import BasePotential
 
+
 from .vi_utils import (
     filter_kwrags_for_func,
     make_sure_nothing_in_cache,

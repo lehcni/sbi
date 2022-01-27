@@ -31,6 +31,9 @@ from sbi.samplers.vi import (
     get_quality_metric,
     get_default_flows,
     get_default_VI_method,
+    get_default_sampling_methods,
+    get_sampling_method_parameters_doc,
+    docstring_parameter,
 )
 
 
@@ -130,9 +133,9 @@ class VIPosterior(NeuralPosterior):
         q: Union[str, Distribution, NeuralPosterior],
         q_kwargs: Dict = {},
     ) -> None:
-        """Defines the variational family. You can specify over which
-        parameters/modules we optimize. This is required for custom distributions which
-        e.g. do not inherit nn.Modules or has the function "parameters" or "modules" to
+        """Defines the variational family. You can specify over which parameters/modules
+        we optimize. This is required for custom distributions which e.g. do not inherit
+        nn.Modules or has the function "parameters" or "modules" to
         give direct access to trainable parameters.
 
 
@@ -164,8 +167,9 @@ class VIPosterior(NeuralPosterior):
         self._q = q
 
     @property
+    @docstring_parameter(get_default_VI_method())
     def vi_method(self):
-        f"""Variational inference method e.g. one of {get_default_VI_method()}"""
+        """Variational inference method e.g. one of {0}"""
         return self._vi_method
 
     @vi_method.setter
@@ -173,11 +177,12 @@ class VIPosterior(NeuralPosterior):
         """See `set_vi_method`."""
         self.set_vi_method(method)
 
+    @docstring_parameter(get_default_VI_method())
     def set_vi_method(self, method: str) -> "NeuralPosterior":
-        f"""Sets variational inference method e.g. one of {get_default_VI_method()}.
+        """Sets variational inference method.
 
         Args:
-            method: Method to use.
+            method: One of {0}
 
         Returns:
             `NeuralPosterior` for chainable calls.
@@ -186,6 +191,15 @@ class VIPosterior(NeuralPosterior):
         self._optimizer_base = get_VI_method(method)
         return self
 
+    @docstring_parameter(
+        get_default_sampling_methods(),
+        "".join(
+            [
+                "\n\t\t" + get_sampling_method_parameters_doc(n).replace("\n", "\n\t\t")
+                for n in get_default_sampling_methods()
+            ]
+        ),
+    )
     def sample(
         self,
         sample_shape: Shape = torch.Size(),
@@ -198,9 +212,9 @@ class VIPosterior(NeuralPosterior):
         Args:
             sample_shape: Shape of samples
             method: Sampling method, alternatively we can debias the approximation by
-            using 'sir' (sampling importance resampling).
-            kwargs: Additional arguments to ensure backward compatibility. Here you can
-            also add parameters for different methods!
+                using simple and efficient sampling schemes. We support one of {0}.
+            kwargs: Hyperparameters for the sampling methods. {1}
+
 
         Returns:
             Samples from posterior.
@@ -221,10 +235,10 @@ class VIPosterior(NeuralPosterior):
     def log_prob(
         self, theta: Tensor, x: Optional[Tensor] = None, track_gradients: bool = False
     ) -> Tensor:
-        r"""Returns the log-probability of theta under the posterior.
+        r"""Returns the log-probability of theta under the variational posterior.
 
         Args:
-            theta: Parameters $\theta$.
+            theta: Parameters
             track_gradients: Whether the returned tensor supports tracking gradients.
                 This can be helpful for e.g. sensitivity analysis, but increases memory
                 consumption.
@@ -258,21 +272,29 @@ class VIPosterior(NeuralPosterior):
         check_for_convergence: bool = True,
         quality_controll_metric: str = "psis",
         **kwargs,
-    ):
+    ) -> NeuralPosterior:
         """This methods trains the variational posterior.
 
         Args:
-            x: The observation
-            loss: The loss that is minimimzed, default is the ELBO
-            n_particles: Number of samples to approximate expectations.
-            learning_rate: Learning rate of the optimizer
-            gamma: Learning rate decay per iteration
-            max_num_iters: Maximum number of iterations
-            clip_value: Gradient clipping value
+            x: The observation.
+            n_particles: Number of samples to approximate expectations within the
+                variational bounds. The larger the more accurate are gradient
+                estimates, but the computational cost per iteration increases.
+            learning_rate: Learning rate of the optimizer.
+            gamma: Learning rate decay per iteration. We use a exponential decay
+                scheduler.
+            max_num_iters: Maximum number of iterations.
+            min_num_iters: Minimum number of iterations.
+            clip_value: Gradient clipping value, decrease may help if you see invalid
+                values.
             warm_up_rounds: Initialize the posterior as the prior.
-            retrain_from_scratch: Retrain the flow
-            resume_training: Resume training the flow
-            show_progress_bar: Show the progress bar
+            retrain_from_scratch: Retrain the variational distributions from scratch.
+            reset_optimizer: Reset the divergence optimizer
+            show_progress_bar: If any progress report should be displayed.
+            quality_controll_metric: Which metric to use for evaluate the quality.
+
+        Returns:
+            NeuralPosterior: The VIPosterior (can be used to chain calls).
         """
 
         # Init q and the optimizer if necessary
@@ -353,6 +375,7 @@ class VIPosterior(NeuralPosterior):
                     retrain_from_scratch=True,
                     reset_optimizer=True,
                 )
+        return self
 
     def map(
         self,
@@ -361,7 +384,7 @@ class VIPosterior(NeuralPosterior):
         num_to_optimize: int = 100,
         learning_rate: float = 0.01,
         init_method: Union[str, Tensor] = "proposal",
-        num_init_samples: int = 1_000,
+        num_init_samples: int = 10_000,
         save_best_every: int = 10,
         show_progress_bars: bool = False,
     ) -> Tensor:

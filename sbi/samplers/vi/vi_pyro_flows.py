@@ -7,7 +7,10 @@ from torch.distributions import Distribution, Normal, Independent
 from pyro.distributions import transforms
 from pyro.nn import AutoRegressiveNN, DenseNN
 
+from sbi.types import Shape, TorchTransform
+
 from .vi_utils import get_modules, get_parameters, filter_kwrags_for_func
+from .vi_utils import docstring_parameter
 
 # Supported transforms and flows are registered here i.e. associated with a name
 
@@ -21,6 +24,18 @@ def register_transform(
     name: Optional[str] = None,
     inits: Callable = lambda *args, **kwargs: {},
 ):
+    """[summary]
+
+
+
+    Args:
+        cls: [description]
+        name: [description]
+        inits: [description]
+
+
+    """
+
     def _register(cls):
         if name is None:
             cls_name = cls.__name__
@@ -40,6 +55,18 @@ def register_transform(
 
 
 def get_transform(name: str, dim, **kwargs):
+    """[summary]
+
+
+
+    Args:
+        name: [description]
+        dim: [description]
+
+    Returns:
+        [type]: [description]
+
+    """
     name = name.lower()
     transform = _TRANSFORMS[name]
     overwritable_kwargs = filter_kwrags_for_func(transform.__init__, kwargs)
@@ -49,13 +76,24 @@ def get_transform(name: str, dim, **kwargs):
 
 
 def register_flow_builder(cls=None, name=None):
+    """[summary]
+
+
+
+    Args:
+        cls: [description]
+        name: [description]
+
+
+    """
+
     def _register(cls):
         if name is None:
             cls_name = cls.__name__
         else:
             cls_name = name
         if cls_name in _FLOW_BUILDERS:
-            raise ValueError(f"The transform {cls_name} is already registered")
+            raise ValueError(f"The flow {cls_name} is not registered as default.")
         else:
             _FLOW_BUILDERS[cls_name] = cls
         return cls
@@ -67,11 +105,33 @@ def register_flow_builder(cls=None, name=None):
 
 
 def get_flow_builder(name, event_shape, link_flow, **kwargs):
+    """[summary]
+
+
+
+    Args:
+        name: [description]
+        event_shape: [description]
+        link_flow: [description]
+
+    Returns:
+        [type]: [description]
+
+    """
     builder = _FLOW_BUILDERS[name]
     return builder(event_shape, link_flow, **kwargs)
 
 
 def get_default_flows():
+    """[summary]
+
+
+
+
+    Returns:
+        [type]: [description]
+
+    """
     return list(_FLOW_BUILDERS.keys())
 
 
@@ -80,21 +140,73 @@ def get_default_flows():
 
 def init_affine_autoregressive(dim, **kwargs):
     hidden_dims = kwargs.pop("hidden_dims", [5 * dim + 5])
-    arn = AutoRegressiveNN(dim, hidden_dims)
+    skip_connections = kwargs.pop("skip_connections", False)
+    nonlinearity = kwargs.pop("nonlinearity", nn.ReLU())
+    arn = AutoRegressiveNN(
+        dim, hidden_dims, nonlinearity=nonlinearity, skip_connections=skip_connections
+    )
     return [arn], {"log_scale_min_clip": -3.0}
 
 
 def init_spline_autoregressive(dim, **kwargs):
-    hidden_dims = kwargs.pop("hidden_dims", [dim * 10, dim * 10])
-    count_bins = 10
-    order = "linear"
-    bound = 3
+    hidden_dims = kwargs.pop("hidden_dims", [5 * dim + 5])
+    skip_connections = kwargs.pop("skip_connections", False)
+    nonlinearity = kwargs.pop("nonlinearity", nn.ReLU())
+    count_bins = kwargs.get("count_bins", 10)
+    order = kwargs.get("order", "linear")
+    bound = kwargs.get("bound", 5)
     if order == "linear":
         param_dims = [count_bins, count_bins, (count_bins - 1), count_bins]
     else:
         param_dims = [count_bins, count_bins, (count_bins - 1)]
-    nn = AutoRegressiveNN(dim, hidden_dims, param_dims)
-    return [dim, nn], {"count_bins": count_bins, "bound": bound, "order": order}
+    neural_net = AutoRegressiveNN(
+        dim,
+        hidden_dims,
+        param_dims=param_dims,
+        skip_connections=skip_connections,
+        nonlinearity=nonlinearity,
+    )
+    return [dim, neural_net], {"count_bins": count_bins, "bound": bound, "order": order}
+
+
+def init_affine_coupling(dim, **kwargs):
+    """Intitialize a affine coupling transform, by providing necessary args and kwargs."""
+    assert dim > 1, "In 1d this would be equivalent to affine flows, use them!"
+    nonlinearity = kwargs.pop("nonlinearity", nn.ReLU())
+    split_dim = kwargs.get("split_dim", dim // 2)
+    hidden_dims = kwargs.pop("hidden_dims", [5 * dim + 5, 5 * dim + 5])
+    arn = DenseNN(split_dim, hidden_dims, nonlinearity=nonlinearity)
+    return [split_dim, arn], {"log_scale_min_clip": -3.0}
+
+
+def init_spline_coupling(dim, **kwargs):
+    """Intitialize a spline coupling transform, by providing necessary args and kwargs."""
+    assert dim > 1, "In 1d this would be equivalent to affine flows, use them!"
+    split_dim = kwargs.get("split_dim", dim // 2)
+    hidden_dims = kwargs.pop("hidden_dims", [5 * dim + 5, 5 * dim + 5])
+    nonlinearity = kwargs.pop("nonlinearity", nn.ReLU())
+    count_bins = kwargs.get("count_bins", 10)
+    order = kwargs.get("order", "linear")
+    bound = kwargs.get("bound", 5)
+    if order == "linear":
+        param_dims = [
+            (dim - split_dim) * count_bins,
+            (dim - split_dim) * count_bins,
+            (dim - split_dim) * (count_bins - 1),
+            (dim - split_dim) * count_bins,
+        ]
+    else:
+        param_dims = [
+            (dim - split_dim) * count_bins,
+            (dim - split_dim) * count_bins,
+            (dim - split_dim) * (count_bins - 1),
+        ]
+    neural_net = DenseNN(split_dim, hidden_dims, param_dims, nonlinearity=nonlinearity)
+    return [dim, split_dim, neural_net], {
+        "count_bins": count_bins,
+        "bound": bound,
+        "order": order,
+    }
 
 
 register_transform(
@@ -107,54 +219,6 @@ register_transform(
     "spline_autoregressive",
     inits=init_spline_autoregressive,
 )
-
-
-class DenseNN(DenseNN):
-    """More powerfull dense net compared to the pyro implementation"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        layers = [
-            nn.Sequential(
-                nn.Linear(self.input_dim + self.context_dim, self.hidden_dims[0]),
-                nn.ReLU(),
-            )
-        ]
-        for hidden_dim in self.hidden_dims:
-            layers += [nn.Sequential(nn.Linear(hidden_dim, hidden_dim), nn.ReLU())]
-
-        layers += [
-            nn.Sequential(nn.Linear(self.hidden_dims[-1], self.output_multiplier))
-        ]
-        self.layers = nn.ModuleList(layers)
-
-
-def init_affine_coupling(dim, **kwargs):
-    assert dim > 1, "In 1d this would be equivalent to affine flows, use them!"
-    split_dim = dim // 2
-    hidden_dims = kwargs.pop("hidden_dims", [5 * dim + 5, 5 * dim + 5])
-    arn = DenseNN(split_dim, hidden_dims)
-    return [split_dim, arn], {"log_scale_min_clip": -3.0}
-
-
-def init_spline_coupling(dim, **kwargs):
-    assert dim > 1, "In 1d this would be equivalent to affine flows, use them!"
-    hidden_dims = kwargs.pop("hidden_dims", [dim * 10, dim * 10])
-    split_dim = dim // 2
-    count_bins = 10
-    order = "linear"
-    bound = 10
-    if order == "linear":
-        param_dims = [count_bins, count_bins, (count_bins - 1), count_bins]
-    else:
-        param_dims = [count_bins, count_bins, (count_bins - 1)]
-    nn = DenseNN(split_dim, hidden_dims, param_dims)
-    return [dim, split_dim, nn], {
-        "count_bins": count_bins,
-        "bound": bound,
-        "order": order,
-    }
-
 
 register_transform(
     transforms.AffineCoupling, "affine_coupling", inits=init_affine_coupling
@@ -244,6 +308,7 @@ class TransformedDistribution(torch.distributions.TransformedDistribution):
             yield from get_modules(t)
 
 
+@docstring_parameter(list(_TRANSFORMS.keys()))
 def build_flow(
     event_shape: torch.Size,
     link_flow: transforms.Transform,
@@ -254,21 +319,21 @@ def build_flow(
     base_dist: Distribution = None,
     **kwargs,
 ) -> TransformedDistribution:
-    f"""Generates a Transformed Distribution where the base_dist is transformed by
-       num_flows normalizing flows of specified type.
+    """Generates a Transformed Distribution where the base_dist is transformed by
+       num_flows bijective transforms of specified type.
 
 
 
     Args:
-        event_shape: Dimension of the events generated by the distribution.
+        event_shape: Shape of the events generated by the distribution.
         link_flow: Links to a specific support .
         num_flows: Number of normalizing flows that are concatenated.
-        type: The type of normalizing flow. Should be one of {_TRANSFORMS.keys()}
+        transform: The type of normalizing flow. Should be one of {0}
         permute: Permute dimension after each layer. This may helpfull for
-        autoregressive or coupling nets.
+            autoregressive or coupling nets.
         batch_norm: Perform batch normalization.
-        base_dist: Base distribution.
-        kwargs
+        base_dist: Base distribution. If 'None' then a standard Gaussian is used.
+        kwargs: Hyperparameters are added here.
     Returns:
         TransformedDistribution
 
@@ -305,16 +370,32 @@ def build_flow(
     return dist
 
 
+@docstring_parameter(list(_TRANSFORMS.keys()))
 @register_flow_builder(name="gaussian_diag")
 def gaussian_diag_flow_builder(event_shape, link_flow, **kwargs):
+    """Generates a Gaussian distribution with diagonal covariance.
+
+    Args:
+        event_shape: Shape of the events generated by the distribution.
+        link_flow: Links to a specific support .
+        kwargs: Hyperparameters are added here.
+            loc: Initial location.
+            scale: Initial triangular matrix.
+
+    Returns:
+        TransformedDistribution
+
+    """
     if "transform" in kwargs:
         kwargs.pop("transform")
+    if "base_dist" in kwargs:
+        kwargs.pop("base_dist")
     if "num_flows" in kwargs:
         kwargs.pop("num_flows")
     return build_flow(
         event_shape,
         link_flow,
-        transform="affine_autoregressive",
+        transform="affine_diag",
         num_flows=1,
         shuffle=False,
         **kwargs,
@@ -322,9 +403,26 @@ def gaussian_diag_flow_builder(event_shape, link_flow, **kwargs):
 
 
 @register_flow_builder(name="gaussian")
-def gaussian_flow_builder(event_shape, link_flow, **kwargs):
+def gaussian_flow_builder(
+    event_shape: Shape, link_flow: TorchTransform, **kwargs
+) -> TransformedDistribution:
+    """Generates a Gaussian distribution.
+
+    Args:
+        event_shape: Shape of the events generated by the distribution.
+        link_flow: Links to a specific support .
+        kwargs: Hyperparameters are added here.
+            loc: Initial location.
+            scale_tril: Initial triangular matrix.
+
+    Returns:
+        TransformedDistribution
+
+    """
     if "transform" in kwargs:
         kwargs.pop("transform")
+    if "base_dist" in kwargs:
+        kwargs.pop("base_dist")
     if "num_flows" in kwargs:
         kwargs.pop("num_flows")
     return build_flow(
@@ -338,7 +436,38 @@ def gaussian_flow_builder(event_shape, link_flow, **kwargs):
 
 
 @register_flow_builder(name="maf")
-def masked_autoregressive_flow_builder(event_shape, link_flow, **kwargs):
+def masked_autoregressive_flow_builder(
+    event_shape: Shape, link_flow: TorchTransform, **kwargs
+) -> TransformedDistribution:
+    """Generates a masked autoregressive flow
+
+    Args:
+        event_shape: Shape of the events generated by the distribution.
+        link_flow: Links to a specific support.
+        num_flows: Number of normalizing flows that are concatenated.
+        permute: Permute dimension after each layer. This may helpfull for
+            autoregressive or coupling nets.
+        batch_norm: Perform batch normalization.
+        base_dist: Base distribution. If 'None' then a standard Gaussian is used.
+        kwargs: Hyperparameters are added here.
+            hidden_dims: The dimensionality of the hidden units per layer.
+            skip_connections: Whether to add skip connections from the input to the
+                output.
+            nonlinearity: The nonlinearity to use in the feedforward network such as
+                torch.nn.ReLU().
+            log_scale_min_clip: The minimum value for clipping the log(scale) from
+                the autoregressive NN
+            log_scale_max_clip: The maximum value for clipping the log(scale) from
+                the autoregressive NN
+            sigmoid_bias: A term to add the logit of the input when using the stable
+                tranform.
+            stable: When true, uses the alternative "stable" version of the transform.
+                Yet this version is also less expressive.
+
+    Returns:
+        TransformedDistribution
+
+    """
     if "transform" in kwargs:
         kwargs.pop("transform")
     return build_flow(
@@ -347,7 +476,33 @@ def masked_autoregressive_flow_builder(event_shape, link_flow, **kwargs):
 
 
 @register_flow_builder(name="nsf")
-def spline_autoregressive_flow_builder(event_shape, link_flow, **kwargs):
+def spline_autoregressive_flow_builder(
+    event_shape: Shape, link_flow: TorchTransform, **kwargs
+) -> TransformedDistribution:
+    """Generates an autoregressive neural spline flow.
+
+    Args:
+        event_shape: Shape of the events generated by the distribution.
+        link_flow: Links to a specific support .
+        num_flows: Number of normalizing flows that are concatenated.
+        permute: Permute dimension after each layer. This may helpfull for
+            autoregressive or coupling nets.
+        batch_norm: Perform batch normalization.
+        base_dist: Base distribution. If 'None' then a standard Gaussian is used.
+        kwargs: Hyperparameters are added here.
+            hidden_dims: The dimensionality of the hidden units per layer.
+            skip_connections: Whether to add skip connections from the input to the
+                output.
+            nonlinearity: The nonlinearity to use in the feedforward network such as
+                torch.nn.ReLU().
+            count_bins: The number of segments comprising the spline.
+            bound: The quantity `K` determining the bounding box.
+            order: One of ['linear', 'quadratic'] specifying the order of the spline.
+
+    Returns:
+        TransformedDistribution
+
+    """
     if "transform" in kwargs:
         kwargs.pop("transform")
     return build_flow(
@@ -356,14 +511,67 @@ def spline_autoregressive_flow_builder(event_shape, link_flow, **kwargs):
 
 
 @register_flow_builder(name="mcf")
-def coupling_flow_builder(event_shape, link_flow, **kwargs):
+def coupling_flow_builder(
+    event_shape: Shape, link_flow: TorchTransform, **kwargs
+) -> TransformedDistribution:
+    """Generates a affine coupling flow.
+
+    Args:
+        event_shape: Shape of the events generated by the distribution.
+        link_flow: Links to a specific support.
+        num_flows: Number of normalizing flows that are concatenated.
+        permute: Permute dimension after each layer. This may helpfull for
+            autoregressive or coupling nets.
+        batch_norm: Perform batch normalization.
+        base_dist: Base distribution. If 'None' then a standard Gaussian is used.
+        kwargs: Hyperparameters are added here.
+            hidden_dims: The dimensionality of the hidden units per layer.
+            skip_connections: Whether to add skip connections from the input to the
+                output.
+            nonlinearity: The nonlinearity to use in the feedforward network such as
+                torch.nn.ReLU().
+            log_scale_min_clip: The minimum value for clipping the log(scale) from
+                the autoregressive NN
+            log_scale_max_clip: The maximum value for clipping the log(scale) from
+                the autoregressive NN
+            split_dim : The dimension to split the input on for the coupling transform.
+
+    Returns:
+        TransformedDistribution
+
+    """
     if "transform" in kwargs:
         kwargs.pop("transform")
     return build_flow(event_shape, link_flow, transform="affine_coupling", **kwargs)
 
 
 @register_flow_builder(name="scf")
-def spline_coupling_flow_builder(event_shape, link_flow, **kwargs):
+def spline_coupling_flow_builder(
+    event_shape: Shape, link_flow: TorchTransform, **kwargs
+) -> TransformedDistribution:
+    """Generates an spline coupling flow.
+
+    Args:
+        event_shape: Shape of the events generated by the distribution.
+        link_flow: Links to a specific support .
+        num_flows: Number of normalizing flows that are concatenated.
+        permute: Permute dimension after each layer. This may helpfull for
+            autoregressive or coupling nets.
+        batch_norm: Perform batch normalization.
+        base_dist: Base distribution. If 'None' then a standard Gaussian is used.
+        kwargs: Hyperparameters are added here.
+            hidden_dims: The dimensionality of the hidden units per layer.
+            nonlinearity: The nonlinearity to use in the feedforward network such as
+                torch.nn.ReLU().
+            count_bins: The number of segments comprising the spline.
+            bound: The quantity `K` determining the bounding box.
+            order: One of ['linear', 'quadratic'] specifying the order of the spline.
+            split_dim : The dimension to split the input on for the coupling transform.
+
+    Returns:
+        TransformedDistribution
+
+    """
     if "transform" in kwargs:
         kwargs.pop("transform")
     return build_flow(event_shape, link_flow, transform="spline_coupling", **kwargs)

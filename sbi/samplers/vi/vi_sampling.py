@@ -8,11 +8,13 @@ import warnings
 from .vi_quality_controll import gpdfit, GerneralizedParetto
 
 _SAMPLING_METHOD = {}
+_SAMPLING_PARAMETERS_DOC = {}
 
 
 def register_sampling_method(
     cls: Optional[object] = None,
     name: Optional[str] = None,
+    doc: Optional[str] = "",
 ):
     def _register(cls):
         if name is None:
@@ -23,6 +25,7 @@ def register_sampling_method(
             raise ValueError(f"The sampling {cls_name} is already registered")
         else:
             _SAMPLING_METHOD[cls_name] = cls
+            _SAMPLING_PARAMETERS_DOC[cls_name] = doc
         return cls
 
     if cls is None:
@@ -33,6 +36,10 @@ def register_sampling_method(
 
 def get_sampling_method(name: str):
     return _SAMPLING_METHOD[name]
+
+
+def get_sampling_method_parameters_doc(name: str) -> str:
+    return _SAMPLING_PARAMETERS_DOC[name]
 
 
 def get_default_sampling_methods() -> List[str]:
@@ -67,12 +74,15 @@ def clamp_weights(weights):
     return weights
 
 
-@register_sampling_method(name="naive")
+@register_sampling_method(name="naive", doc="Naive: Just samples from q")
 def naive_sampling(num_samples, potential_fn, proposal, **kwargs):
     return proposal.sample((num_samples,))
 
 
-@register_sampling_method(name="sir")
+@register_sampling_method(
+    name="sir",
+    doc="sir: Performs sampling importance resampling. \n'K': Number of importance samples \n'num_samples_batch': How many samples are drawn in parallel (For large K you may have to decrease this due to memory limitation)",
+)
 def importance_resampling(
     num_samples, potential_fn, proposal, K=32, num_samples_batch=10000, **kwargs
 ):
