@@ -262,15 +262,18 @@ def adapt_and_check_variational_distributions(
         def modules():
             return mod
 
-        # Compatible with deepcopy
-        def __deepcopy__(self, memo):
+        # Compatible with deepcopy, tensors must use clone instead of deepcopy...
+        def __deepcopy__(self, *args, **kwargs):
             cls = self.__class__
             result = cls.__new__(cls)
-            memo[id(self)] = result
-            for k, v in self.__dict__.items():
-                if isinstance(v, torch.Tensor) and v.requires_grad and not v.is_leaf:
-                    q.__dict__[k] = v.clone().detach()
-                setattr(result, k, deepcopy(v, memo))
+            if hasattr(self, "__dict__"):
+                for k, v in self.__dict__:
+                    if isinstance(v, torch.Tensor):
+                        setattr(result, k, v.clone())
+                    else:
+                        setattr(result, k, deepcopy(v))
+            else:
+                return deepcopy(self)
             return result
 
         q.__deepcopy__ = __deepcopy__
@@ -283,10 +286,17 @@ def adapt_and_check_variational_distributions(
     return q
 
 
-def make_sure_nothing_in_cache(q):
-    """This may be used before a 'deepcopy' call, as non leaf tensors (which are in the
-    cache) do not support the deepcopy protocol...
-    Unfortunaltly the q.clear_cache() function does only remove a subset of cached tensors."""
+def make_sure_nothing_in_cache(q: TransformedDistribution) -> None:
+    """This function tries to ensure that no non-leaf tensors are within the
+    Distribution object. This is required to ensure that 'deepcopy' protocols work.
+
+
+
+    Args:
+        q: Distribution
+
+
+    """
     q.clear_cache()
     # The original methods can miss some parts..
     for t in q.transforms:
